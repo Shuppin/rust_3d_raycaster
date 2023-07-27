@@ -1,0 +1,6 @@
+/target
+
+*.bkp
+*.drawio
+
+Cargo.lock
