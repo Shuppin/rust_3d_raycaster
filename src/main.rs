@@ -18,9 +18,10 @@ fn main() -> Result<(), Error> {
     // Add mouse movement/strafing (DOOM music starts to play)
     // Add immediate mode GUI
 
-    let mut system = Engine::new("3D Raycaster", 900, 600)?;
+    let mut system = Engine::new("3D Raycaster", 900, 600)
+        .expect("Failed to initialise engine");
 
-    system.set_target_fps(0);
+    system.set_target_fps(5);
     system.main_loop()?;
 
     Ok(())

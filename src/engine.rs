@@ -1,3 +1,4 @@
+//! Contains the Engine implementation.
 
 use crate::{
     Error,
@@ -8,12 +9,15 @@ use crate::{
 use std::time::{Instant, Duration};
 use sdl2::{event::Event, keyboard::{Keycode, Scancode}};
 
+/// Serves as the core of our 3D rendering application, acting as the Game Engine.
+/// 
+/// It initializes all the necessary components and systems, configures the program settings,
+/// and manages the main game loop.
 pub struct Engine {
     sdl_context: sdl2::Sdl,
     game_context: GameContext,
     renderer: Renderer,
-    frame_time: Duration,
-    frame_time_with_wait: Duration,
+    delta_time: Duration,
 }
 
 impl Engine {
@@ -21,31 +25,32 @@ impl Engine {
         let sdl_context = sdl2::init()?;
         let game_context = GameContext::new();
         let renderer = Renderer::new(&sdl_context, window_title, window_width, window_height)?;
-        let frame_time = Duration::ZERO;
-        let frame_time_with_wait = Duration::ZERO;
+        let delta_time = Duration::ZERO;
 
         Ok(Self {
-            sdl_context, game_context, renderer,
-            frame_time, frame_time_with_wait
+            sdl_context, game_context, renderer, delta_time
         })
     }
 
+    /// Sets the target frames per second (FPS) for rendering engine.
+    /// 
+    /// If 'fps' is <= 0, the rendering engine will achieve as high
+    /// fps as possible.
     pub fn set_target_fps(&mut self, fps: i32) {
         self.renderer.render_context.desired_frame_time =
             if fps <= 0 { Duration::ZERO } 
             else { Duration::from_millis((1000/fps) as u64) };
     }
-
     pub fn main_loop(&mut self) -> Result<(), Error> {
 
         let mut frame_start: Instant;
 
         loop {
-            frame_start = Instant::now();
+            frame_start = Instant::now();  // Capture the time at the frame start
 
             if self.handle_events()? { break }
 
-            self.game_context.tick(self.frame_time_with_wait);
+            self.game_context.tick(self.delta_time);
 
             self.renderer.draw(&self.game_context)?;
 
@@ -55,13 +60,19 @@ impl Engine {
         Ok(())
     }
 
+    /// Compares the desired frame time with the current frame time,
+    /// subtracting the values and sleeping for that duration.
+    /// 
+    /// Calclates current frame time based of `frame_start`.
     fn wait(&mut self, frame_start: Instant) {
-        self.frame_time = Instant::now().duration_since(frame_start);
-        if self.frame_time <= self.renderer.render_context.desired_frame_time {
-            std::thread::sleep(self.renderer.render_context.desired_frame_time-self.frame_time);
-            self.frame_time_with_wait = self.renderer.render_context.desired_frame_time
+
+        let frame_time = Instant::now().duration_since(frame_start);
+        
+        if frame_time <= self.renderer.render_context.desired_frame_time {
+            std::thread::sleep(self.renderer.render_context.desired_frame_time-frame_time);
+            self.delta_time = self.renderer.render_context.desired_frame_time
         } else {
-            self.frame_time_with_wait = self.frame_time;
+            self.delta_time = frame_time;
         }
     }
 
