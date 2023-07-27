@@ -9,9 +9,9 @@ use crate::{
 use std::time::{Instant, Duration};
 use sdl2::{event::Event, keyboard::{Keycode, Scancode}};
 
-/// Serves as the core of our 3D rendering application, acting as the Game Engine.
+/// Serves as the core of the 3D rendering application.
 /// 
-/// It initializes all the necessary components and systems, configures the program settings,
+/// It initialises all the necessary components and systems, configures the program settings,
 /// and manages the main game loop.
 pub struct Engine {
     sdl_context: sdl2::Sdl,
@@ -41,13 +41,18 @@ impl Engine {
             if fps <= 0 { Duration::ZERO } 
             else { Duration::from_millis((1000/fps) as u64) };
     }
+
+    /// Initiates the main game loop, stopping when a quit event
+    /// is recieved or an error occurs.
     pub fn main_loop(&mut self) -> Result<(), Error> {
 
         let mut frame_start: Instant;
 
         loop {
-            frame_start = Instant::now();  // Capture the time at the frame start
+            // Capture the time at the frame start
+            frame_start = Instant::now();
 
+            // Break the loop if handle_events returns true
             if self.handle_events()? { break }
 
             self.game_context.tick(self.delta_time);
@@ -76,17 +81,30 @@ impl Engine {
         }
     }
 
+    /// Handles all SDL Events.
+    /// 
+    /// Return type `Ok(true)` signifies that a quit event was recieved.
     fn handle_events(&mut self) -> Result<bool, Error> {
+
+        // Recieve new events this frame
         let mut event_pump = self.sdl_context.event_pump()?;
+
+        // Iterate over events
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit{..} |
-                Event::KeyDown{keycode: Some(Keycode::Escape), ..}
-                => return Ok(true),
-                _ => {}
+                // Quit event
+                    Event::Quit{..} |
+                    Event::KeyDown{keycode: Some(Keycode::Escape), ..}
+                    => return Ok(true),  // `true` represents that we want to quit
+                // Default
+                    _ => {}
             }
         }
 
+        // The only key related events are KeyUp and KeyDown,
+        // but we want to know if a key is held.
+        // We could store this state internally, in fact we kind of already do that.
+        // However such information is already stored in the keyboard state.
         let ks = event_pump.keyboard_state();
 
         if ks.is_scancode_pressed(Scancode::W) { self.game_context.move_forward()   }
