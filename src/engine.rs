@@ -23,7 +23,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(window_title: &'static str, window_width: u32, window_height: u32) -> Result<Self, Error> {
         let sdl_context = sdl2::init()?;
-        let game_context = GameContext::new();
+        let game_context = GameContext::new()?;
         let renderer = Renderer::new(&sdl_context, window_title, window_width, window_height)?;
         let delta_time = Duration::ZERO;
 

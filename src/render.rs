@@ -1,11 +1,12 @@
 use std::cell::RefCell;
+use std::convert::TryFrom;
 
 use sdl2::{
     render::{TextureCreator, Texture},
     pixels::PixelFormatEnum, rect::Rect
 };
 
-use crate::{Error, game::GameContext, texture::TEXTURE_WIDTH};
+use crate::{Error, game::{WORLD_SIZE, GameContext}, texture::TEXTURE_WIDTH};
 
 enum TextureTarget {
     Render,
@@ -20,7 +21,8 @@ pub struct RenderContext {
     pub floor_colour: u32,
     pub ceil_colour: u32,
     pub show_minimap: bool,
-    pub minimap_size_px: u32,  // Must be a multiple of world.len()
+    pub minimap_scale: u32,
+    minimap_scale_px: u32,
     pub colour_mapping: fn(i32) -> u32
 }
 
@@ -45,7 +47,8 @@ impl RenderContext {
             floor_colour: 0x505050ff,
             ceil_colour: 0x828282ff,
             show_minimap: true,
-            minimap_size_px: 168,
+            minimap_scale: 6,
+            minimap_scale_px: 0,
             colour_mapping
         }
     }
@@ -74,10 +77,12 @@ impl Renderer {
         let creator = sdl_canvas.texture_creator();
         let render_context = RenderContext::new();
 
+        let minimap_size = u32::try_from(render_context.minimap_scale as usize * WORLD_SIZE)?;
+
         let render_texture = creator.create_texture_target(
             PixelFormatEnum::RGBA8888, width, height)?;
         let minimap_texture = creator.create_texture_target(
-                PixelFormatEnum::RGBA8888, render_context.minimap_size_px, render_context.minimap_size_px)?;
+                PixelFormatEnum::RGBA8888, minimap_size, minimap_size)?;
 
         // Reinterpret the bits of `render_texture` and
         // `minimap_texture` as a `Texture<'static>`
@@ -85,8 +90,6 @@ impl Renderer {
             (std::mem::transmute::<_,Texture<'static>>(render_texture),
              std::mem::transmute::<_,Texture<'static>>(minimap_texture))
         };
-
-        let minimap_size = render_context.minimap_size_px.pow(2);
 
         let image_textures = crate::texture::load_textures();
 
@@ -102,7 +105,8 @@ impl Renderer {
         })
     }
 
-    pub fn draw(&mut self, game_context: &GameContext) -> Result<(), Error> {  
+    pub fn draw(&mut self, game_context: &GameContext) -> Result<(), Error> {
+        self.render_context.minimap_scale_px = u32::try_from(self.render_context.minimap_scale as usize * WORLD_SIZE)?;
         self.clear(&TextureTarget::Minimap);
         self.draw_background();
         self.draw_world(game_context)?;
@@ -126,13 +130,13 @@ impl Renderer {
             let mut minimap_texture = self.minimap_texture.borrow_mut();
 
             minimap_texture.update(None, self.data_raw(TextureTarget::Minimap),
-                (self.render_context.minimap_size_px*4) as usize)?;
+                (self.render_context.minimap_scale_px*4) as usize)?;
 
-            let minimap_pos_x = (self.width-self.render_context.minimap_size_px-10) as i32;
-            let minimap_pos_y = (self.height-self.render_context.minimap_size_px-10) as i32;
+            let minimap_pos_x = (self.width-self.render_context.minimap_scale_px-10) as i32;
+            let minimap_pos_y = (self.height-self.render_context.minimap_scale_px-10) as i32;
             self.sdl_canvas.copy(&minimap_texture, None,
                 Rect::new(minimap_pos_x, minimap_pos_y,
-                    self.render_context.minimap_size_px, self.render_context.minimap_size_px)
+                    self.render_context.minimap_scale_px, self.render_context.minimap_scale_px)
             )?;
         }
 
@@ -159,7 +163,7 @@ impl Renderer {
 
         let (max_x, max_y) = match target {
             TextureTarget::Render => (self.width - 1, self.height - 1),
-            TextureTarget::Minimap => (self.render_context.minimap_size_px - 1, self.render_context.minimap_size_px - 1)
+            TextureTarget::Minimap => (self.render_context.minimap_scale_px - 1, self.render_context.minimap_scale_px - 1)
         };
 
         if x  > max_x || y > max_y {
@@ -169,7 +173,7 @@ impl Renderer {
 
         match target {
             TextureTarget::Render => self.render_data[(y * self.width + x) as usize] = colour,
-            TextureTarget::Minimap => self.minimap_data[(y * self.render_context.minimap_size_px + x) as usize] = colour
+            TextureTarget::Minimap => self.minimap_data[(y * self.render_context.minimap_scale_px + x) as usize] = colour
         }
     }
 
@@ -263,14 +267,13 @@ impl Renderer {
 
     fn draw_world(&mut self, context: &GameContext) -> Result<(), String> {
 
-        let minimap_cell_size_x = self.render_context.minimap_size_px as usize / context.world.len();
-        let minimap_cell_size_y = self.render_context.minimap_size_px as usize / context.world.first().unwrap().len();
+        let minimap_cell_size = self.render_context.minimap_scale_px as usize / WORLD_SIZE;
 
         let pos_x = context.player.position.x;
         let pos_y = context.player.position.y;
 
-        let minimap_scaled_pos_x = (pos_y*minimap_cell_size_x as f32).max(0.0) as u32;
-        let minimap_scaled_pos_y = (pos_x*minimap_cell_size_y as f32).max(0.0) as u32;
+        let minimap_scaled_pos_x = (pos_y*minimap_cell_size as f32).max(0.0) as u32;
+        let minimap_scaled_pos_y = (pos_x*minimap_cell_size as f32).max(0.0) as u32;
 
         for column_index in 0..self.width {
 
@@ -370,8 +373,8 @@ impl Renderer {
                 self.draw_line(
                     &TextureTarget::Minimap,
 
-                    (ray_intersection_y * minimap_cell_size_x as f32) as i32,
-                    (ray_intersection_x * minimap_cell_size_x as f32) as i32,
+                    (ray_intersection_y * minimap_cell_size as f32) as i32,
+                    (ray_intersection_x * minimap_cell_size as f32) as i32,
 
                     minimap_scaled_pos_x as i32,
                     minimap_scaled_pos_y as i32,
@@ -470,20 +473,19 @@ impl Renderer {
 
     fn draw_minimap_cells(&mut self, game_context: &GameContext) {
         
-        let minimap_cell_size_x = self.render_context.minimap_size_px as usize / game_context.world.len();
-        let minimap_cell_size_y = self.render_context.minimap_size_px as usize / game_context.world.first().unwrap().len();
+        let minimap_cell_size = self.render_context.minimap_scale_px as usize / WORLD_SIZE;
 
-        for y in 0..game_context.world.len() {
+        for y in 0..WORLD_SIZE {
             for (x, cell) in game_context.world[y].iter().enumerate() {
 
                 let cell_colour = (self.render_context.colour_mapping)(*cell);
 
-                let scaled_x = x * minimap_cell_size_x;
-                let scaled_y = y * minimap_cell_size_y;
+                let scaled_x = x * minimap_cell_size;
+                let scaled_y = y * minimap_cell_size;
 
                 if *cell != 0 {
-                    for sub_x in scaled_x..scaled_x+minimap_cell_size_x {
-                        for sub_y in scaled_y..scaled_y+minimap_cell_size_y {
+                    for sub_x in scaled_x..scaled_x+minimap_cell_size {
+                        for sub_y in scaled_y..scaled_y+minimap_cell_size {
                             self.set_pixel(
                                 &TextureTarget::Minimap,
                                 sub_x as u32, sub_y as u32,
@@ -526,14 +528,13 @@ impl Renderer {
 
     fn draw_player_on_minimap(&mut self, game_context: &GameContext) {
 
-        let minimap_cell_size_x = self.render_context.minimap_size_px as usize / game_context.world.len();
-        let minimap_cell_size_y = self.render_context.minimap_size_px as usize / game_context.world.first().unwrap().len();
+        let minimap_cell_size = self.render_context.minimap_scale_px as usize / WORLD_SIZE;
 
-        let minimap_scaled_pos_x = (game_context.player.position.y*minimap_cell_size_x as f32).max(0.0) as u32;
-        let minimap_scaled_pos_y = (game_context.player.position.x*minimap_cell_size_y as f32).max(0.0) as u32;
+        let minimap_scaled_pos_x = (game_context.player.position.y*minimap_cell_size as f32).max(0.0) as u32;
+        let minimap_scaled_pos_y = (game_context.player.position.x*minimap_cell_size as f32).max(0.0) as u32;
 
-        let minimap_scaled_dir_x = minimap_scaled_pos_x as i32 + (game_context.player.camera_direction.y*minimap_cell_size_x as f32 * 3.0) as i32;
-        let minimap_scaled_dir_y = minimap_scaled_pos_y as i32 + (game_context.player.camera_direction.x*minimap_cell_size_y as f32 * 3.0) as i32;
+        let minimap_scaled_dir_x = minimap_scaled_pos_x as i32 + (game_context.player.camera_direction.y*minimap_cell_size as f32 * 3.0) as i32;
+        let minimap_scaled_dir_y = minimap_scaled_pos_y as i32 + (game_context.player.camera_direction.x*minimap_cell_size as f32 * 3.0) as i32;
 
         // Draw line representing the direction (look) vector
         self.draw_line(
@@ -555,7 +556,7 @@ impl Renderer {
     fn clear(&mut self, target: &TextureTarget) {
         match target {
             TextureTarget::Minimap
-            => {self.minimap_data = vec![0; (self.render_context.minimap_size_px.pow(2)) as usize]}
+            => {self.minimap_data = vec![0; (self.render_context.minimap_scale_px.pow(2)) as usize]}
             TextureTarget::Render
             => {self.render_data = vec![0; (self.width*self.height) as usize]}
         }
