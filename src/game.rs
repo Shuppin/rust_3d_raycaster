@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{player::Player, Error};
+use crate::{player::Player, Error, texture::N_TEXTURES};
 
 pub const WORLD_SIZE: usize = 24;
 
@@ -54,7 +54,7 @@ impl GameContext {
                     }
                 }
                 // If the current is above or below the set of valid cells
-                if cell > &9 || cell < &0 {
+                if cell > &N_TEXTURES.try_into()? || cell < &0 {
                     return Err(format!("WORLD - World contains invalid wall at ({x}, {y})").into())
                 }
             }

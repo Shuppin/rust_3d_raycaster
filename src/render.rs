@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::convert::TryFrom;
 
 use sdl2::{
     render::{TextureCreator, Texture},
@@ -58,7 +57,7 @@ pub struct Renderer {
     pub render_context: RenderContext,
     sdl_canvas: sdl2::render::WindowCanvas,
     creator: TextureCreator<sdl2::video::WindowContext>,
-    image_textures: Vec<Vec<u32>>,
+    image_textures: Box<[Box<[u32]>]>,
     render_texture: RefCell<Texture<'static>>,
     minimap_texture: RefCell<Texture<'static>>,
     // RefCell allows for multiple immutable borrows to be used internally
@@ -77,7 +76,7 @@ impl Renderer {
         let creator = sdl_canvas.texture_creator();
         let render_context = RenderContext::new();
 
-        let minimap_size = u32::try_from(render_context.minimap_scale as usize * WORLD_SIZE)?;
+        let minimap_size: u32 = (render_context.minimap_scale as usize * WORLD_SIZE).try_into()?;
 
         let render_texture = creator.create_texture_target(
             PixelFormatEnum::RGBA8888, width, height)?;
@@ -91,7 +90,7 @@ impl Renderer {
              std::mem::transmute::<_,Texture<'static>>(minimap_texture))
         };
 
-        let image_textures = crate::texture::load_textures();
+        let image_textures = crate::texture::load_textures()?;
 
         Ok(Self {
             render_context,
@@ -106,7 +105,7 @@ impl Renderer {
     }
 
     pub fn draw(&mut self, game_context: &GameContext) -> Result<(), Error> {
-        self.render_context.minimap_scale_px = u32::try_from(self.render_context.minimap_scale as usize * WORLD_SIZE)?;
+        self.render_context.minimap_scale_px = (self.render_context.minimap_scale as usize * WORLD_SIZE).try_into()?;
         self.clear(&TextureTarget::Minimap);
         self.draw_background();
         self.draw_world(game_context)?;
