@@ -2,11 +2,15 @@ use image::{ImageBuffer, Rgba};
 
 use crate::Error;
 
+// TODO: Look into the SDL_Image library to load images instead
+
 // Index directly corresponds to value in map
 pub const TEXTURE_WIDTH: usize = 512;
 pub const N_TEXTURES: usize = 9;
 const TEXTURES_TO_LOAD: [&str; N_TEXTURES] = ["DUNGEONBRICKS.png", "DUNGEONCELL.png", "SPOOKYDOOR.png", "CROSSCUBE.png", "OFFICEDOOR.png", "PIPES.png", "ROUNDBRICKS.png", "LAVAROCKS.png", "GRAYWALL.png"];
 
+/// Loads an image file given a filename into a u32 array.
+/// Image files must be stored in the `/img/` directory.
 fn load_resize_png_to_u32_array(file_name: &str) -> Result<Box<[u32]>, Error> {
     let env = std::env::current_dir().unwrap();
     let img_path = env.to_str().unwrap().to_owned() + "\\img\\" + file_name;
@@ -22,8 +26,7 @@ fn load_resize_png_to_u32_array(file_name: &str) -> Result<Box<[u32]>, Error> {
 
     // Convert the RGBA buffer to an array of u32 in the format RGBA,
     // 1 byte per channel
-    // We create a boxed array since it's possible for the size of
-    // the texture to exceed the size of the stack.
+    // Array is boxed because it is to large to store on the stack.
     let mut u32_array = vec![0_u32; TEXTURE_WIDTH * TEXTURE_WIDTH].into_boxed_slice();
     for (i, pixel) in rgba_buffer.pixels().enumerate() {
         let [r, g, b, a] = pixel.0;
@@ -34,7 +37,9 @@ fn load_resize_png_to_u32_array(file_name: &str) -> Result<Box<[u32]>, Error> {
     Ok(u32_array)
 }
 
+/// Loads all the textures by name from the `TEXTURES_TO_LOAD` array.
 pub fn load_textures() -> Result<Box<[Box<[u32]>]>, Error>  {
+    // Array is boxed because it is to large to store on the stack.
     let mut textures = vec![
         vec![0_u32; TEXTURE_WIDTH * TEXTURE_WIDTH].into_boxed_slice(); N_TEXTURES
     ].into_boxed_slice();
@@ -44,6 +49,8 @@ pub fn load_textures() -> Result<Box<[Box<[u32]>]>, Error>  {
         match result {
             Ok(u32_array) => {textures[i] = u32_array}
             Err(err) => {
+                // If a texture fails to load, this will result
+                // in a black texture being displayed instead.
                 println!("WARN: Could not load texture '{}' - {:?}", texture, err)
             }
         }
