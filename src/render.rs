@@ -131,8 +131,8 @@ impl Renderer {
             minimap_texture.update(None, self.data_raw(TextureTarget::Minimap),
                 (self.render_context.minimap_scale_px*4) as usize)?;
 
-            let minimap_pos_x = (self.width-self.render_context.minimap_scale_px-10) as i32;
-            let minimap_pos_y = (self.height-self.render_context.minimap_scale_px-10) as i32;
+            let minimap_pos_x = i32::try_from(self.width)? - i32::try_from(self.render_context.minimap_scale_px)?-10;
+            let minimap_pos_y = i32::try_from(self.height)? - i32::try_from(self.render_context.minimap_scale_px)?-10;
             self.sdl_canvas.copy(&minimap_texture, None,
                 Rect::new(minimap_pos_x, minimap_pos_y,
                     self.render_context.minimap_scale_px, self.render_context.minimap_scale_px)
@@ -176,7 +176,8 @@ impl Renderer {
         }
     }
 
-    fn draw_line(&mut self, target: &TextureTarget, x0: i32, y0: i32, x1: i32, y1: i32, thickness: i32, colour: u32) {
+    fn draw_line(&mut self, target: &TextureTarget, x0: i32, y0: i32, x1: i32, y1: i32, thickness: i32, colour: u32) 
+        -> Result<(), Error> {
 
         let dx = (x1 - x0).abs();
         let dy = (y1 - y0).abs();
@@ -186,12 +187,23 @@ impl Renderer {
         let mut x = x0;
         let mut y = y0;
 
+        let thickness = thickness.abs();
         let half_thickness = thickness / 2;
 
         // Plot the initial point
         for i in 0..thickness {
             for j in 0..thickness {
-                self.set_pixel(target, (x + i - half_thickness) as u32, (y + j - half_thickness) as u32, colour);
+                let x = x + i - half_thickness;
+                let y = y + j - half_thickness;
+                if x < 0 || y < 0 {
+                    continue
+                }
+                self.set_pixel(
+                    target,
+                    x.try_into()?,
+                    y.try_into()?,
+                    colour
+                );
             }
         }
 
@@ -210,19 +222,35 @@ impl Renderer {
             // Draw the line with the specified thickness
             for i in 0..thickness {
                 for j in 0..thickness {
-                    self.set_pixel(target, (x + i - half_thickness) as u32, (y + j - half_thickness) as u32, colour);
+                    let x = x + i - half_thickness;
+                    let y = y + j - half_thickness;
+                    if x < 0 || y < 0 {
+                        continue
+                    }
+                    self.set_pixel(
+                        target,
+                        x.try_into()?,
+                        y.try_into()?,
+                        colour
+                    );
                 }
             }
         }
+
+        Ok(())
     }
 
-    fn draw_filled_circle(&mut self, target: &TextureTarget, center_x: u32, center_y: u32, radius: u32, colour: u32) {
+    fn draw_filled_circle(&mut self, target: &TextureTarget, center_x: i32, center_y: i32, radius: i32, colour: u32) {
         // Helper function to set a pixel if it is within the bounds of the window
         let mut set_pixel_if_in_bounds = |x: i32, y: i32| {
             if x >= 0 && x < self.width as i32 && y >= 0 && y < self.height as i32 {
                 self.set_pixel(target, x as u32, y as u32, colour);
             }
         };
+
+        let radius = radius.abs();
+
+
 
         // Midpoint circle algorithm to draw the filled circle
         let mut x = radius as i32;
@@ -231,12 +259,12 @@ impl Renderer {
 
         while x >= y {
             for i in -x..=x {
-                set_pixel_if_in_bounds(center_x as i32 + i, center_y as i32 + y);
-                set_pixel_if_in_bounds(center_x as i32 + i, center_y as i32 - y);
+                set_pixel_if_in_bounds(center_x + i, center_y + y);
+                set_pixel_if_in_bounds(center_x + i, center_y - y);
             }
             for i in -y..=y {
-                set_pixel_if_in_bounds(center_x as i32 + i, center_y as i32 + x);
-                set_pixel_if_in_bounds(center_x as i32 + i, center_y as i32 - x);
+                set_pixel_if_in_bounds(center_x + i, center_y + x);
+                set_pixel_if_in_bounds(center_x + i, center_y - x);
             }
 
             y += 1;
@@ -264,7 +292,7 @@ impl Renderer {
         }
     }
 
-    fn draw_world(&mut self, context: &GameContext) -> Result<(), String> {
+    fn draw_world(&mut self, context: &GameContext) -> Result<(), Error> {
 
         let minimap_cell_size = self.render_context.minimap_scale_px as usize / WORLD_SIZE;
 
@@ -273,6 +301,12 @@ impl Renderer {
 
         let minimap_scaled_pos_x = (pos_y*minimap_cell_size as f32).max(0.0) as u32;
         let minimap_scaled_pos_y = (pos_x*minimap_cell_size as f32).max(0.0) as u32;
+
+        let minimap_ray_interval: u32 = if self.render_context.minimap_scale >= 40 {
+            1
+        } else {
+            (-0.133*self.render_context.minimap_scale as f32 + 6.33) as u32
+        };
 
         for column_index in 0..self.width {
 
@@ -367,7 +401,8 @@ impl Renderer {
                 ray_intersection_y = pos_y;
             }
 
-            if column_index % 5 == 0  && self.render_context.show_minimap {
+            if column_index % minimap_ray_interval == 0
+                && self.render_context.show_minimap {
 
                 self.draw_line(
                     &TextureTarget::Minimap,
@@ -375,12 +410,12 @@ impl Renderer {
                     (ray_intersection_y * minimap_cell_size as f32) as i32,
                     (ray_intersection_x * minimap_cell_size as f32) as i32,
 
-                    minimap_scaled_pos_x as i32,
-                    minimap_scaled_pos_y as i32,
+                    minimap_scaled_pos_x.try_into()?,
+                    minimap_scaled_pos_y.try_into()?,
 
                     2,
                     0xFFFFFFFF
-                );
+                )?;
 
             }
             
@@ -393,12 +428,12 @@ impl Renderer {
             }  
 
             let draw_start = std::cmp::max(
-                (-(line_height as i32) / 2) + ((self.height / 2) as i32),
+                -((line_height / 2) as i32) + (self.height / 2) as i32,
                 0
             ) as u32;
             let draw_end = std::cmp::min(
-                ((line_height as i32) / 2) + ((self.height / 2) as i32),
-                (self.height - 1) as i32
+                (line_height / 2) as i32 + (self.height / 2) as i32,
+                i32::try_from(self.height - 1)?
             ) as u32;
 
             let step = TEXTURE_WIDTH as f32 / line_height as f32;
@@ -411,13 +446,14 @@ impl Renderer {
                 wall_x = ray_intersection_x - ray_intersection_x.floor()
             }
 
-            let texture_x = TEXTURE_WIDTH as i32 - (wall_x * TEXTURE_WIDTH as f32) as i32 - 1;
+            let texture_x = i32::try_from(TEXTURE_WIDTH)? - (wall_x * TEXTURE_WIDTH as f32) as i32 - 1;
 
-            let mut texture_y = (((draw_start as i32 - (self.height / 2) as i32) + (line_height / 2) as i32) as f32 * step).max(0.0);
+            let mut texture_y = (((i32::try_from(draw_start)? - (self.height / 2) as i32) + (line_height / 2) as i32) as f32 * step).max(0.0);
 
             for y in draw_start..draw_end {
 
-                let mut colour = self.image_textures[texture_index][TEXTURE_WIDTH as usize * texture_y as usize + texture_x as usize];
+                // Hmm, i don't like this, not sure if it's possible for texture_x to go below 0
+                let mut colour = self.image_textures[texture_index][TEXTURE_WIDTH * texture_y as usize + texture_x as usize];
 
                 texture_y += step;
 
@@ -470,7 +506,7 @@ impl Renderer {
         Ok(())
     }
 
-    fn draw_minimap_cells(&mut self, game_context: &GameContext) {
+    fn draw_minimap_cells(&mut self, game_context: &GameContext) -> Result<(), Error> {
         
         let minimap_cell_size = self.render_context.minimap_scale_px as usize / WORLD_SIZE;
 
@@ -487,7 +523,7 @@ impl Renderer {
                         for sub_y in scaled_y..scaled_y+minimap_cell_size {
                             self.set_pixel(
                                 &TextureTarget::Minimap,
-                                sub_x as u32, sub_y as u32,
+                                u32::try_from(sub_x)?, u32::try_from(sub_y)?,
                                 cell_colour
                             )
                         }
@@ -497,6 +533,8 @@ impl Renderer {
                 
             }
         }
+
+        Ok(())
 
         /*
         // Example of how to write a texture as if it was a texture object
@@ -525,23 +563,23 @@ impl Renderer {
         */
     }
 
-    fn draw_player_on_minimap(&mut self, game_context: &GameContext) {
+    fn draw_player_on_minimap(&mut self, game_context: &GameContext) -> Result<(), Error> {
 
         let minimap_cell_size = self.render_context.minimap_scale_px as usize / WORLD_SIZE;
 
-        let minimap_scaled_pos_x = (game_context.player.position.y*minimap_cell_size as f32).max(0.0) as u32;
-        let minimap_scaled_pos_y = (game_context.player.position.x*minimap_cell_size as f32).max(0.0) as u32;
+        let minimap_scaled_pos_x = (game_context.player.position.y*minimap_cell_size as f32).max(0.0) as i32;
+        let minimap_scaled_pos_y = (game_context.player.position.x*minimap_cell_size as f32).max(0.0) as i32;
 
-        let minimap_scaled_dir_x = minimap_scaled_pos_x as i32 + (game_context.player.camera_direction.y*minimap_cell_size as f32 * 3.0) as i32;
-        let minimap_scaled_dir_y = minimap_scaled_pos_y as i32 + (game_context.player.camera_direction.x*minimap_cell_size as f32 * 3.0) as i32;
+        let minimap_scaled_dir_x = minimap_scaled_pos_x + (game_context.player.camera_direction.y*minimap_cell_size as f32 * 3.0) as i32;
+        let minimap_scaled_dir_y = minimap_scaled_pos_y + (game_context.player.camera_direction.x*minimap_cell_size as f32 * 3.0) as i32;
 
         // Draw line representing the direction (look) vector
         self.draw_line(
             &TextureTarget::Minimap,
-            minimap_scaled_pos_x as i32, minimap_scaled_pos_y as i32,
+            minimap_scaled_pos_x, minimap_scaled_pos_y,
             minimap_scaled_dir_x, minimap_scaled_dir_y,
             2, 0x00FF00FF
-        );
+        )?;
 
         // Draw small circle on map representing player
         self.draw_filled_circle(
@@ -550,6 +588,7 @@ impl Renderer {
             3, 0xFF0000FF
         );
 
+        Ok(())
     }
 
     fn clear(&mut self, target: &TextureTarget) {
