@@ -110,8 +110,8 @@ impl Renderer {
         self.draw_background();
         self.draw_world(game_context)?;
         if self.render_context.show_minimap {
-            self.draw_minimap_cells(game_context);
-            self.draw_player_on_minimap(game_context);
+            self.draw_minimap_cells(game_context)?;
+            self.draw_player_on_minimap(game_context)?;
         }
         self.swap()?;
         Ok(())
