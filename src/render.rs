@@ -22,7 +22,8 @@ pub struct RenderContext {
     pub show_minimap: bool,
     pub minimap_scale: u32,
     minimap_scale_px: u32,
-    pub colour_mapping: fn(i32) -> u32
+    pub colour_mapping: fn(i32) -> u32,
+    pub resolution_scaling: bool
 }
 
 impl RenderContext {
@@ -48,7 +49,8 @@ impl RenderContext {
             show_minimap: true,
             minimap_scale: 6,
             minimap_scale_px: 0,
-            colour_mapping
+            colour_mapping,
+            resolution_scaling: true 
         }
     }
 }
@@ -70,6 +72,7 @@ impl Renderer {
         let video_ss = sdl_context.video()?;
         let window = video_ss.window(title, width, height)
             .position_centered()
+            .resizable()
             .build()
             .map_err(|e| e.to_string())?;
         let sdl_canvas = window.into_canvas().build()?;
@@ -105,6 +108,7 @@ impl Renderer {
     }
 
     pub fn draw(&mut self, game_context: &GameContext) -> Result<(), Error> {
+        if !self.render_context.resolution_scaling { self.update_texture_sizes()? }
         self.render_context.minimap_scale_px = (self.render_context.minimap_scale as usize * WORLD_SIZE).try_into()?;
         self.clear(&TextureTarget::Minimap);
         self.draw_background();
@@ -118,12 +122,19 @@ impl Renderer {
     }
 
     fn swap(&mut self) -> Result<(), Error> {
+        let (actual_width, actual_height) =
+            if self.render_context.resolution_scaling {
+                self.sdl_canvas.output_size()?
+            } else {
+                (self.width, self.height)
+            };
+
         let mut render_texture = self.render_texture.borrow_mut();
 
         render_texture.update(None, self.data_raw(TextureTarget::Render),
             (self.width*4) as usize)?;
 
-        self.sdl_canvas.copy(&render_texture,None,None)?;
+        self.sdl_canvas.copy(&render_texture,None,Rect::new(0,0,actual_width,actual_height))?;
 
         if self.render_context.show_minimap {
             let mut minimap_texture = self.minimap_texture.borrow_mut();
@@ -131,8 +142,8 @@ impl Renderer {
             minimap_texture.update(None, self.data_raw(TextureTarget::Minimap),
                 (self.render_context.minimap_scale_px*4) as usize)?;
 
-            let minimap_pos_x = i32::try_from(self.width)? - i32::try_from(self.render_context.minimap_scale_px)?-10;
-            let minimap_pos_y = i32::try_from(self.height)? - i32::try_from(self.render_context.minimap_scale_px)?-10;
+            let minimap_pos_x = i32::try_from(actual_width)? - i32::try_from(self.render_context.minimap_scale_px)?-10;
+            let minimap_pos_y = i32::try_from(actual_height)? - i32::try_from(self.render_context.minimap_scale_px)?-10;
             self.sdl_canvas.copy(&minimap_texture, None,
                 Rect::new(minimap_pos_x, minimap_pos_y,
                     self.render_context.minimap_scale_px, self.render_context.minimap_scale_px)
@@ -140,6 +151,37 @@ impl Renderer {
         }
 
         self.sdl_canvas.present();
+
+        Ok(())
+    }
+
+    fn update_texture_sizes(&mut self) -> Result<(), Error> {
+        let (new_width, new_height) = self.sdl_canvas.output_size()?;
+
+        if new_width != self.width || new_height != self.height{
+            self.width = new_width;
+            self.height = new_height;
+
+            let minimap_size: u32 = (self.render_context.minimap_scale as usize * WORLD_SIZE).try_into()?;
+
+            let render_texture = self.creator.create_texture_target(
+                PixelFormatEnum::RGBA8888, self.width, self.height)?;
+            let minimap_texture = self.creator.create_texture_target(
+                    PixelFormatEnum::RGBA8888, minimap_size, minimap_size)?;
+    
+            // Reinterpret the bits of `render_texture` and
+            // `minimap_texture` as a `Texture<'static>`
+            let (render_texture, minimap_texture) = unsafe {
+                (std::mem::transmute::<_,Texture<'static>>(render_texture),
+                 std::mem::transmute::<_,Texture<'static>>(minimap_texture))
+            };
+
+            self.render_texture = RefCell::new(render_texture);
+            self.minimap_texture = RefCell::new(minimap_texture);
+                
+            self.minimap_data = vec![0; (self.render_context.minimap_scale_px.pow(2)) as usize];
+            self.render_data = vec![0; (self.width*self.height) as usize];
+        }
 
         Ok(())
     }
